@@ -37,7 +37,7 @@ class DataBase:
         '''
         try:
     
-            mySql_insert_query = """INSERT INTO bcm_social_distance_data (bcm_social_distance_data_id, frame_id, count, video_file_name) VALUES (%s, %s,%s ,%s) """
+            mySql_insert_query = """INSERT INTO bcm_social_distance_data (frame_id, count, video_file_name) VALUES (%s,%s ,%s) """
             records_to_insert = df
             print(mySql_insert_query)
             print(records_to_insert)
@@ -46,7 +46,7 @@ class DataBase:
             #cursor.executemany(mySql_insert_query, records_to_insert)
             self.connection.commit()
             print(cursor.rowcount, " Records inserted successfully into Laptop table")
-            self.connection.close()
+            
         except Error as e:
             print('Error:\n{}'.format(e))
             self.connection.close()

@@ -1,6 +1,5 @@
  # -*- coding: utf-8 -*-
 import torch, torchvision
-import imutils
 import detectron2
 from detectron2.utils.logger import setup_logger
 import cv2
@@ -10,7 +9,10 @@ from detectron2 import model_zoo
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
 import euclid
+import database
+import Cloud
 import datetime
+import pytz
 from gcloud import storage
 from datetime import datetime
 import subprocess 
@@ -30,25 +32,11 @@ class detectron:
         self.cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_C4_3x.yaml")
         self.predictor = DefaultPredictor(self.cfg)
         self.euc = euclid.Dist()
-        
-    def download_blob(self, bucket_name, source_blob_name, destination_file_name):
-        """Downloads a blob from the bucket."""
-        bucket_name = "input_social_dist"
-        source_blob_name = "unprocessed/sample.mp4"
-        destination_file_name = "/home/devagastya0/bcor/sample.mp4"
-    
-        storage_client = storage.Client()
-    
-        bucket = storage_client.bucket(bucket_name)
-        blob = bucket.blob(source_blob_name)
-        blob.download_to_filename(destination_file_name)
-    
-        print(
-            "Blob {} downloaded to {}.".format(
-                source_blob_name, destination_file_name
-            )
-        )
-      
+        self.db = database.DataBase()
+        #self.cloud =Cloud.Cloud()
+        tz = pytz.timezone('Asia/Kolkata')
+        tz = datetime.now(tz)
+        self.date = str(tz.strftime('%d-%m-%y_%H:%M'))
         
     def streaming_live(self):
         '''
@@ -63,11 +51,22 @@ class detectron:
         
         #self.download_blob()
         print("[INFO] starting video file thread...")
-        for root, dirs, files in os.walk('/home/devagastya0/bcor/input_social_dist/unproc/'):
+        #files = self.cloud.list_files('input_social_dist','unprocessed')
+        for root, dirs, files in os.walk('/var/www/html/input_social_dist/unprocessed/'):
             for file in files:
-                print(os.path.join(root, file))
-                self.image_proc(file) 
-
+                #self.cloud.download_blob('input_social_dist',file,'./'+file)
+                
+                self.image_proc(os.path.join(root,file)) 
+                run(['bash','/var/www/html/move_files.sh',file])
+            
+#            self.cloud.upload_blob('input_social_dist','processed/'+file.replace('unprocessed/',""),'./'+file)
+#            self.cloud.delete_blob('input_social_dist',file)
+#        for root, dirs, files in os.walk('./frames'):
+#            for file in files:
+#                file_name = os.path.join(root, file)
+#                print(file_name)
+                #self.cloud.upload_blob('output_social_dist','frames_'+self.date+'/'+file,file_name)    
+        #run(['bash','clean_up.sh'])
     def image_proc(self, file):
         '''
         Function to preprocess for computation with Detectron2.
@@ -82,24 +81,28 @@ class detectron:
 
         '''
         
-        cap = cv2.VideoCapture('/home/devagastya0/bcor/input_social_dist/unproc/' + file)
-        
+        cap = cv2.VideoCapture(file)
+        file_name = file.replace('/var/www/html/input_social_dist/unprocessed/','')
+        file_name = file_name.replace('.mp4','')
         print('Video founds.')
         FPS=cap.get(cv2.CAP_PROP_FPS)
         print('FPS: ', FPS)
-        
+        run(['sudo','mkdir','/var/www/html/output_social_dist/'+file_name+'_frames_'+self.date])
+        run(['sudo','chmod','757','/var/www/html/output_social_dist/'+file_name+'_frames_'+self.date])
         while (cap.isOpened()):
             print('Position:', int(cap.get(cv2.CAP_PROP_POS_FRAMES)))
             cap.set(cv2.CAP_PROP_POS_FRAMES, FPS+int(cap.get(cv2.CAP_PROP_POS_FRAMES)))
             ret,frame = cap.read()
             if frame is not None:
-                self.load_asap(frame)
+                self.load_asap(frame, 'output_social_dist/'+file_name+'_frames_'+self.date)
             else:
                 cap.release()
         df = pd.DataFrame(self.euc.count_data)
-        file_name = str(file)
-        file_name = file_name.replace('.mp4','')
-        self.save_count(df, file_name)
+        df['video_file_name'] = file_name
+        df = df.to_records(index=False).tolist()
+        self.db.store_into_table(df)
+        
+#        self.save_count(df, file_name)
         
     def save_count(self, df, file_name):
         '''
@@ -118,7 +121,7 @@ class detectron:
         '''
         
         try:
-            df.to_csv('/home/devagastya0/bcor/op/AAAAAA_'+file_name+'.csv')
+            df.to_csv('/home/devagastya0/bcor/op/'+file_name+'.csv',index=False)
         except:
             print(file_name + ' file could not be saved.')    
                                 
@@ -149,7 +152,7 @@ class detectron:
     #             break
     #     print('Frames initialised.')
       
-    def load_asap(self, img):
+    def load_asap(self, img,directory):
         '''
         Function to process each frame/image on Detectron2.
     
@@ -168,7 +171,7 @@ class detectron:
         outputs = self.predictor(img)
         p1 ,p2, d = self.euc.find_closest(outputs, img)
         if len(p1) != 0:
-            self.euc.change_2_red(img, p1, p2,count)
+            self.euc.change_2_red(img, p1, p2,count, directory)
             
     
     

@@ -7,18 +7,20 @@ import cv2
 import pandas as pd
 from datetime import datetime
 import matplotlib.pyplot as plt
-
+import Cloud
 class Dist:
     
     def __init__(self):
         self.count_data = []
+        #self.cloud = Cloud.Cloud()
+        self.date = str(datetime.now())
     
     def persons_find(self,outputs):
         '''
         
 
         Parameters
-        ----------
+
         outputs : type 
                 Output instance of the detectron2 predictor.
 
@@ -131,8 +133,8 @@ class Dist:
                     d.append(dist[i][j])
         
         return p1,p2,d
-    
-    def change_2_red(self,img, p1,p2, count):
+     
+    def change_2_red(self,img, p1,p2, count, directory):
         '''
         
 
@@ -145,7 +147,7 @@ class Dist:
         p2 : TYPE
             Secondary Person id.
         sum : TYPE
-            Count of frames saved.
+            Count of frames saved.d
 
         Returns
         -------
@@ -159,6 +161,8 @@ class Dist:
             x1,y1,x2,y2 = self.person[i]
             _ = cv2.rectangle(img, (x1, y1), (x2, y2), (0,0,255), 2) 
             
-            cv2.imwrite('output_social_dist/frame'+str(count)+'.png', img)
+            cv2.imwrite('/var/www/html/'+directory+'/frame'+str(count)+'.png', img)
+        print('/var/www/html/'+directory+'/frame'+str(count)+'.png')
+            
         dict1 = {'Frame_name':'frame_'+str(count),'count':len(p1)}
         self.count_data.append(dict1)

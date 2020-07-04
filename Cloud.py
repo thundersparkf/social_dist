@@ -44,10 +44,18 @@ class Cloud:
         blob.upload_from_filename(source_file_name)
     
         print(
-            "Blob {} downloaded to {}.".format(
+            "Blob {} uploaded to {}.".format(
                 destination_blob_name, source_file_name
             )
         )
-    def delete_blob(self, bucket_name, blob_name, file_name):
+    def delete_blob(self, bucket_name,  file_name):
         bucket = self.storage_client.bucket(bucket_name)
-        bucket.delete_blob('unprocessed/'+file_name)
+        bucket.delete_blob(file_name)
+        
+    def list_files(self, bucketName, bucketFolder):
+        bucket = self.storage_client.bucket(bucketName)
+        files = bucket.list_blobs(prefix=bucketFolder)
+        fileList = [file.name for file in files if '.' in file.name]
+        return fileList    
+        
+        
