@@ -7,7 +7,6 @@ import cv2
 import pandas as pd
 from datetime import datetime
 import matplotlib.pyplot as plt
-import Cloud
 class Dist:
     
     def __init__(self):
@@ -20,17 +19,19 @@ class Dist:
         
 
         Parameters
-
-        outputs : type 
+        ----------
+        outputs : detectron2 outputs object 
                 Output instance of the detectron2 predictor.
 
         Returns
         -------
-        num :type 
-            Count of people in each image.
-        person : person_ids for all people inside frame.
+        num : int
+            Count of people inside the frane.
+        person : list
+            List of persons and coordinates.
 
         '''
+        
         classes=outputs['instances'].pred_classes.cpu().numpy()
         ind = np.where(classes==0)[0]
         bbox=outputs['instances'].pred_boxes.tensor.cpu().numpy()
@@ -39,24 +40,26 @@ class Dist:
         return num, person  
     
     
-    def mid_point(self,img,person,idx=None):
+    def mid_point(self,img,person,idx):
         '''
         
 
         Parameters
         ----------
-        img : Type 
+        img : uint8 
             Frames in the video.
-        person : TYPE
-            DESCRIPTION.
-        idx : int, optional
-            DESCRIPTION. The default is None.
+        person : list
+            List of persons and coordinates.
+        idx : int, 
+            id of the person object. 
 
         Returns
         -------
-        mid : midpoint coordinates for each person in frame.
+        mid : tuple of int
+            midpoint coordinates for each person in frame.
 
         '''
+        
         x1,y1,x2,y2 = person[idx]
         
         #compute bottom center of bbox
@@ -74,9 +77,9 @@ class Dist:
 
         Parameters
         ----------
-        outputs : type
+        outputs : detectron2 outputs object 
                 Output instance of the detectron2 predictor.
-        img : type
+        img : uint8
             Frames from the video.
 
         Returns
@@ -85,8 +88,6 @@ class Dist:
             Distance between each person within the threshold.
 
         '''
-        
-        
         
         self.num, self.person = self.persons_find( outputs)
         midpoints = [self.mid_point(img,self.person,i) for i in range(len(self.person))]
@@ -104,9 +105,9 @@ class Dist:
 
         Parameters
         ----------
-        outputs : type
+        outputs : detectron2 outputs object 
             Output instance of the detectron2 predictor.
-        img : TYPE
+        img : uint8
             Frames from the video.
         thresh : int, 
             value for minimum threshold distance between two people. The default is 150.
@@ -140,14 +141,14 @@ class Dist:
 
         Parameters
         ----------
-        img : type
+        img : uint8
             Frames from the video.
-        p1 : TYPE
+        p1 : int
             Primary Person id.
-        p2 : TYPE
+        p2 : int
             Secondary Person id.
-        sum : TYPE
-            Count of frames saved.d
+        sum : int
+            Count of frames saved.
 
         Returns
         -------
@@ -161,8 +162,7 @@ class Dist:
             x1,y1,x2,y2 = self.person[i]
             _ = cv2.rectangle(img, (x1, y1), (x2, y2), (0,0,255), 2) 
             
-            cv2.imwrite('/var/www/html/'+directory+'/frame'+str(count)+'.png', img)
-        print('/var/www/html/'+directory+'/frame'+str(count)+'.png')
+            cv2.imwrite('/var/www/html/output_social_dist/'+directory+'/frame'+str(count)+'.png', img)
             
-        dict1 = {'Frame_name':'frame_'+str(count),'count':len(p1)}
+        dict1 = {'Frame_name':'/'+directory+'/frame'+str(count)+'.png','count':len(p1)}
         self.count_data.append(dict1)

@@ -10,20 +10,27 @@ from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
 import euclid
 import database
-import Cloud
 import datetime
 import pytz
 from gcloud import storage
 from datetime import datetime
 import subprocess 
+import mail
+from mail import Email
 from subprocess import run
 count = 0
 class detectron:
     
     def __init__(self):
-        
-        self.comp = 'cuda:0' if (torch.cuda.is_available()) else 'cpu'
-        print(self.comp)
+        '''
+        Initialising the detectron2 model and setting computation to GPU.
+
+        Returns
+        -------
+        None.
+
+        '''
+        self.comp = 'cuda' if (torch.cuda.is_available()) else 'cpu'
         self.cfg = get_cfg()
         self.cfg.MODEL.DEVICE=self.comp
         self.cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_R_50_C4_3x.yaml"))
@@ -31,12 +38,13 @@ class detectron:
         
         self.cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_C4_3x.yaml")
         self.predictor = DefaultPredictor(self.cfg)
-        self.euc = euclid.Dist()
+        
         self.db = database.DataBase()
+        self.email = Email()
         #self.cloud =Cloud.Cloud()
         tz = pytz.timezone('Asia/Kolkata')
         tz = datetime.now(tz)
-        self.date = str(tz.strftime('%d-%m-%y_%H:%M'))
+        self.date = str(tz.strftime('%Y-%m-%d_%H:%M'))
         
     def streaming_live(self):
         '''
@@ -50,7 +58,6 @@ class detectron:
         
         
         #self.download_blob()
-        print("[INFO] starting video file thread...")
         #files = self.cloud.list_files('input_social_dist','unprocessed')
         for root, dirs, files in os.walk('/var/www/html/input_social_dist/unprocessed/'):
             for file in files:
@@ -67,13 +74,33 @@ class detectron:
 #                print(file_name)
                 #self.cloud.upload_blob('output_social_dist','frames_'+self.date+'/'+file,file_name)    
         #run(['bash','clean_up.sh'])
-    def image_proc(self, file):
+                
+    def create_dir(self, file_name):
         '''
-        Function to preprocess for computation with Detectron2.
+        
 
         Parameters
         ----------
-        file : A video file.
+        file_name : string
+            Name of the directory to be created.
+
+        Returns
+        -------
+        None.
+
+        '''
+        run(['sudo','mkdir','/var/www/html/output_social_dist/'+file_name+'_frames_'+self.date])
+        run(['sudo','chmod','757','/var/www/html/output_social_dist/'+file_name+'_frames_'+self.date])
+        
+        
+    def image_proc(self, file):
+        '''
+        
+
+        Parameters
+        ----------
+        file : video file
+            Video file to be processed frame by frame.
 
         Returns
         -------
@@ -83,22 +110,21 @@ class detectron:
         
         cap = cv2.VideoCapture(file)
         file_name = file.replace('/var/www/html/input_social_dist/unprocessed/','')
-        file_name = file_name.replace('.mp4','')
-        print('Video founds.')
+        self.euc = euclid.Dist()
         FPS=cap.get(cv2.CAP_PROP_FPS)
-        print('FPS: ', FPS)
-        run(['sudo','mkdir','/var/www/html/output_social_dist/'+file_name+'_frames_'+self.date])
-        run(['sudo','chmod','757','/var/www/html/output_social_dist/'+file_name+'_frames_'+self.date])
+        self.create_dir(file_name)
         while (cap.isOpened()):
-            print('Position:', int(cap.get(cv2.CAP_PROP_POS_FRAMES)))
             cap.set(cv2.CAP_PROP_POS_FRAMES, FPS+int(cap.get(cv2.CAP_PROP_POS_FRAMES)))
             ret,frame = cap.read()
             if frame is not None:
-                self.load_asap(frame, 'output_social_dist/'+file_name+'_frames_'+self.date)
+                self.load_asap(frame, file_name+'_frames_'+self.date)
             else:
                 cap.release()
         df = pd.DataFrame(self.euc.count_data)
         df['video_file_name'] = file_name
+        df['created_on'] = self.date
+        count = df['count'].sum()
+        self.email.message_send(count, self.date)
         df = df.to_records(index=False).tolist()
         self.db.store_into_table(df)
         
@@ -110,9 +136,10 @@ class detectron:
 
         Parameters
         ----------
-        df : DataFrame storing frame_id and count per each frame.       
-       
-        file_name : Name of the video file.
+        df : pandas DataFrame
+            Pandas DataFrame with data of frame_id, count per frame, file_name and date.
+        file_name : string
+            Filename of the CSV file.
 
         Returns
         -------
@@ -154,12 +181,14 @@ class detectron:
       
     def load_asap(self, img,directory):
         '''
-        Function to process each frame/image on Detectron2.
-    
-        Function
+        
+
         Parameters
         ----------
-        img : Image/Frame to be processed.
+        img : image file
+            Single frame extracted from the video file.
+        directory : string
+            Name of the directory the processed frames should saved.
 
         Returns
         -------

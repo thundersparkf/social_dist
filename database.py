@@ -8,17 +8,33 @@ Created on Fri Jul  3 14:26:02 2020
 import mysql.connector
 from mysql.connector import Error
 import pandas as pd
+import configparser
+from configparser import ConfigParser
 
 class DataBase:
-    def __init__(self):
+    def __init__(self, host='', database='sys', user='root', password='Agastya2001#'):
+        db_config = ConfigParser()
+        db_config.read('config.ini')
+        
+        self.host=str(db_config.get('database', 'host'))
+        self.database=str(db_config.get('database', 'database'))
+        self.user=str(db_config.get('database', 'user'))
+        self.password=str(db_config.get('database', 'password'))
+        
+        
+    def connect(self):
+        connection = None
         try:
-            self.connection = mysql.connector.connect(host='35.244.12.188',
-                                                     database='cnw_bcm_uat',
-                                                     user='chuttiroot',
-                                                     password='Root@chutti!@#')
+            connection = mysql.connector.connect(host=self.host,
+                                                 database=self.database,
+                                                 user=self.user,
+                                                 password=self.password)
             
         except Error as error:
             print("Failed to connect: {}".format(error))
+            
+        finally:
+            return connection
             
 
     def store_into_table(self, df):
@@ -36,18 +52,17 @@ class DataBase:
 
         '''
         try:
-    
-            mySql_insert_query = """INSERT INTO bcm_social_distance_data (frame_id, count, video_file_name) VALUES (%s,%s ,%s) """
+            connection = self.connect()
+            mySql_insert_query = """INSERT INTO bcm_social_distance_data (frame_id, count, video_file_name, created_on) VALUES (%s,%s ,%s,%s) """
             records_to_insert = df
-            print(mySql_insert_query)
-            print(records_to_insert)
-            cursor = self.connection.cursor()
+            cursor = connection.cursor()
             cursor.executemany(mySql_insert_query,records_to_insert)
-            #cursor.executemany(mySql_insert_query, records_to_insert)
-            self.connection.commit()
-            print(cursor.rowcount, " Records inserted successfully into Laptop table")
+            connection.commit()
             
         except Error as e:
             print('Error:\n{}'.format(e))
-            self.connection.close()
+            
+        finally:
+            if connection is not None and connection.is_connected():
+                connection.close()
 
