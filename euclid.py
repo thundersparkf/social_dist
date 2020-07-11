@@ -157,11 +157,12 @@ class Dist:
         '''
         
         risky = np.unique(p1+p2)
+        
         for i in risky:
             x1,y1,x2,y2 = self.person[i]
             _ = cv2.rectangle(img, (x1, y1), (x2, y2), (0,0,255), 2) 
             
             cv2.imwrite('/var/www/html/output_social_dist/'+directory+'/frame'+str(count)+'.png', img)
             
-        dict1 = {'Frame_name':'/'+directory+'/frame'+str(count)+'.png','count':len(risky)}
+        dict1 = {'Frame_name':'/'+directory+'/frame'+str(count)+'.png','count':len(p1)}
         self.count_data.append(dict1)
