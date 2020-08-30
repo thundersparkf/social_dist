@@ -9,6 +9,7 @@ from detectron2 import model_zoo
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
 import euclid
+import torch.multiprocessing as mp
 import database
 import datetime
 import pytz
@@ -38,10 +39,9 @@ class detectron:
         
         self.cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-Detection/faster_rcnn_R_50_C4_3x.yaml")
         self.predictor = DefaultPredictor(self.cfg)
-        
+        self.num_processes = 6
         self.db = database.DataBase()
         self.email = Email()
-        #self.cloud =Cloud.Cloud()
         tz = pytz.timezone('Asia/Kolkata')
         tz = datetime.now(tz)
         self.date = str(tz.strftime('%Y-%m-%d_%H:%M'))
@@ -56,24 +56,12 @@ class detectron:
 
         '''
         
-        
-        #self.download_blob()
-        #files = self.cloud.list_files('input_social_dist','unprocessed')
         for root, dirs, files in os.walk('/var/www/html/input_social_dist/unprocessed/'):
             for file in files:
-                #self.cloud.download_blob('input_social_dist',file,'./'+file)
-                
                 self.image_proc(os.path.join(root,file)) 
                 run(['bash','/var/www/html/move_files.sh',file])
             
-#            self.cloud.upload_blob('input_social_dist','processed/'+file.replace('unprocessed/',""),'./'+file)
-#            self.cloud.delete_blob('input_social_dist',file)
-#        for root, dirs, files in os.walk('./frames'):
-#            for file in files:
-#                file_name = os.path.join(root, file)
-#                print(file_name)
-                #self.cloud.upload_blob('output_social_dist','frames_'+self.date+'/'+file,file_name)    
-        #run(['bash','clean_up.sh'])
+
                 
     def create_dir(self, file_name):
         '''
@@ -152,32 +140,7 @@ class detectron:
         except:
             print(file_name + ' file could not be saved.')    
                                 
-    # def video_to_frame(self):
-    #     cap = cv2.VideoCapture('sample.mp4')
-    #     cnt=0
-    #     FPS=cap.get(cv2.CAP_PROP_FPS)
-    #     if (cap.isOpened()== False): 
-    #         print("Error opening video stream or file")
-    #     global sum
-    #     ret,first_frame = cap.read()
-    #     print('Frames initialising...')
-    #     while(cap.isOpened()):
-    #         cap.set(cv2.CAP_PROP_POS_FRAMES, FPS+int(cap.get(cv2.CAP_PROP_POS_FRAMES)))
-    #         print('Position:', int(cap.get(cv2.CAP_PROP_POS_FRAMES)))
-    #         ret, frame = cap.read()
-    #         if ret == True:
-    #             start = datetime.now()
-    #             sum+=1
-    #             self.load_asap(frame)
-    #             #cv2.imwrite('frames/'+str(cnt)+'.png', frame)
-    #             cnt=cnt+1
-    #             end = datetime.now()
-    #             print('{}: count, {} time'.format(sum,(end-start)))
-    #             if(cnt==37):
-    #                 break
-    #         else: 
-    #             break
-    #     print('Frames initialised.')
+
       
     def load_asap(self, img,directory):
         '''
@@ -201,7 +164,76 @@ class detectron:
         p1 ,p2, d = self.euc.find_closest(outputs, img)
         if len(p1) != 0:
             self.euc.change_2_red(img, p1, p2,count, directory)
-            
+
     
-    
-    
+    def combine_output_files(self, output_file_name):
+        list_of_output_files = ["output_{}.mp4".format(i) for i in range(self.num_processes)]
+        with open("list_of_output_files.txt", "w") as f:
+            for t in list_of_output_files:
+                f.write("file {} \n".format(t))
+
+        ffmpeg_cmd = "ffmpeg -y -loglevel error -f concat -safe 0 -i list_of_output_files.txt -vcodec copy " + output_file_name
+        subprocess.Popen(ffmpeg_cmd, shell=True).wait()
+
+        for f in list_of_output_files:
+            os.remove(f)
+        os.remove("list_of_output_files.txt")
+    def multi_process(self):
+        print("Video processing using {} processes...".format(self.num_processes))
+
+        p = mp.Pool(self.num_processes)
+        p.map(self.process_video_multiprocessing, range(self.num_processes))
+
+        self.combine_output_files(self.num_processes)
+
+        
+
+    def process_video_multiprocessing(self, file, group_number):
+        
+        frame_jump_unit =  int(cap.get(cv2.CAP_PROP_FRAME_COUNT)// self.num_processes)
+        self.euc = euclid.Dist()
+        cap = cv2.VideoCapture(file)
+        file = file.replace('/var/www/html/input_social_dist/unprocessed/','')
+        self.create_dir(file)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_jump_unit * group_number)
+
+        width, height = (
+                int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            )
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        proc_frames = 0
+
+        fourcc = cv2.VideoWriter_fourcc('XVID')
+        out = cv2.VideoWriter()
+        output_file_name = "output_multi.avi"
+        out.open("output_{}.mp4".format(group_number), fourcc, fps, (width, height), True)
+        try:
+            while proc_frames < frame_jump_unit:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                
+                self.load_asap(frame, file_name+'_frames_'+self.date)
+
+                proc_frames += 1
+        except:
+            cap.release()
+            out.release()
+
+        cap.release()
+        out.release()
+
+
+        df = pd.DataFrame(self.euc.count_data)
+        df['video_file_name'] = file
+        df['created_on'] = self.date
+        count = df['count'].sum()
+        self.email.message_send(count, self.date)
+        df = df.to_records(index=False).tolist()
+        self.db.store_into_table(df)
+                
+        
+        
+        
